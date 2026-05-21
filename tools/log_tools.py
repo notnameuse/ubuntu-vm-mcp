@@ -1,3 +1,4 @@
+import shlex
 from pathlib import PurePosixPath
 
 
@@ -7,7 +8,7 @@ def vm_collect_log(ssh, file_path, timeout=None):
         return {"content": "", "truncated": False, "error": "file_path must stay inside project_root"}
 
     path = f"{ssh.project_root}/{rel_path.as_posix()}"
-    stdout, stderr, code = ssh.exec(f"cat {path}", timeout)
+    stdout, stderr, code = ssh.exec(f"cat {shlex.quote(path)}", timeout)
     if code != 0:
         return {"content": "", "truncated": False, "error": stderr.strip()}
     content = stdout

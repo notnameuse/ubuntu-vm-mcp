@@ -7,7 +7,7 @@ BLOCKLIST = [
     r"dd\s+if=",
     r"\bmkfs\b",
     r":\(\)\s*\{",
-    r"(^|\s)cd\s+",
+    r"(^|[;\s&|])cd(\s|$)",
     r"\.\./",
 ]
 

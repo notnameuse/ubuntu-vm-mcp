@@ -22,3 +22,10 @@ def test_exec_blocks_cd_escape():
     result = vm_exec(ssh, "cd / && ls")
     assert result["blocked"] is True
     ssh.exec.assert_not_called()
+
+
+def test_exec_blocks_and_cd_escape():
+    ssh = MagicMock()
+    result = vm_exec(ssh, "ls&&cd /tmp")
+    assert result["blocked"] is True
+    ssh.exec.assert_not_called()
