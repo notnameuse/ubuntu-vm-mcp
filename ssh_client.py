@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 import paramiko
@@ -13,7 +14,14 @@ class SSHClient:
 
     def _connect(self):
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        verify = self._config.get("verify_host_keys", True)
+        if verify:
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            known_hosts = Path.home() / ".ssh" / "known_hosts"
+            if known_hosts.exists():
+                client.load_host_keys(str(known_hosts))
+        else:
+            client.set_missing_host_key_policy(paramiko.WarningPolicy())
         client.connect(
             hostname=self._config["ssh_host"],
             port=int(self._config["ssh_port"]),
@@ -31,7 +39,8 @@ class SSHClient:
             _, stdout, stderr = self._client.exec_command(command, timeout=actual_timeout)
             code = stdout.channel.recv_exit_status()
             return stdout.read().decode(), stderr.read().decode(), code
-        except Exception:
+        except (paramiko.SSHException, OSError, EOFError) as e:
+            logging.warning("SSH exec failed, reconnecting: %s", e)
             self._client = None
             self._connect()
             _, stdout, stderr = self._client.exec_command(command, timeout=actual_timeout)
@@ -50,3 +59,10 @@ class SSHClient:
         if self._client is not None:
             self._client.close()
             self._client = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
