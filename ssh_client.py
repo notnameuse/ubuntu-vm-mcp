@@ -113,6 +113,21 @@ class SSHClient:
     def log_max_bytes(self):
         return int(self._config.get("log_max_bytes", 20480))
 
+    @property
+    def verify_targets(self):
+        """阶段校验的构建目标列表；未配置时返回 None，由调用方回退默认值。"""
+        return self._config.get("verify_targets")
+
+    @property
+    def verify_ctest_filter(self):
+        """阶段校验的 ctest 过滤表达式；未配置时返回 None。"""
+        return self._config.get("verify_ctest_filter")
+
+    @property
+    def verify_direct_tests(self):
+        """阶段校验中直接运行的测试可执行文件列表；未配置时返回 None。"""
+        return self._config.get("verify_direct_tests")
+
     def close(self):
         """尽力关闭并清空 SFTP/SSH 资源，清理异常只记录不阻断恢复流程。"""
         if self._sftp is not None:

@@ -19,6 +19,22 @@ STAGE6_DIRECT_TESTS = [
 ]
 
 
+def _configured_list(ssh, name, default):
+    """读取列表型配置；类型不符或为空时回退默认值，避免 MagicMock 等非列表真值被误用。"""
+    value = getattr(ssh, name, None)
+    if isinstance(value, (list, tuple)) and value:
+        return list(value)
+    return list(default)
+
+
+def _configured_text(ssh, name, default):
+    """读取字符串型配置；类型不符或为空时回退默认值。"""
+    value = getattr(ssh, name, None)
+    if isinstance(value, str) and value:
+        return value
+    return default
+
+
 def _build_dir(ssh):
     candidate = PurePosixPath(getattr(ssh, "build_dir", "build") or "build")
     if candidate.is_absolute():
@@ -36,6 +52,10 @@ def _run_stage6_binary(ssh, binary_name):
 
 def vm_verify_stage6(ssh):
     steps = []
+    # 目标与过滤式优先取配置，让同类工程不改代码就能复用该工具
+    targets = _configured_list(ssh, "verify_targets", STAGE6_TARGETS)
+    direct_tests = _configured_list(ssh, "verify_direct_tests", STAGE6_DIRECT_TESTS)
+    ctest_filter = _configured_text(ssh, "verify_ctest_filter", STAGE6_CTEST_FILTER)
 
     out, _, _ = ssh.exec("test -e /dev/video0 && echo found || echo not_found", None)
     found = out.strip() == "found"
@@ -45,7 +65,7 @@ def vm_verify_stage6(ssh):
         "detail": "/dev/video0 found" if found else "/dev/video0 not found (non-blocking)",
     })
 
-    build_result = vm_build(ssh, targets=STAGE6_TARGETS)
+    build_result = vm_build(ssh, targets=targets)
     steps.append({
         "name": "build_targets",
         "passed": build_result["success"],
@@ -54,7 +74,7 @@ def vm_verify_stage6(ssh):
     if not build_result["success"]:
         return {"steps": steps, "overall": "failed"}
 
-    for binary_name in STAGE6_DIRECT_TESTS:
+    for binary_name in direct_tests:
         passed, detail = _run_stage6_binary(ssh, binary_name)
         steps.append({
             "name": f"run_{binary_name}",
@@ -64,7 +84,7 @@ def vm_verify_stage6(ssh):
         if not passed:
             return {"steps": steps, "overall": "failed"}
 
-    ctest_result = vm_run_ctest(ssh, filter=STAGE6_CTEST_FILTER)
+    ctest_result = vm_run_ctest(ssh, filter=ctest_filter)
     ctest_passed = ctest_result.get("exit_code", 0) == 0 and ctest_result["failed"] == 0
     steps.append({
         "name": "regression_tests",

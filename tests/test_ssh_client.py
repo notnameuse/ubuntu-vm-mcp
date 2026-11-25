@@ -330,3 +330,22 @@ def test_open_sftp_allows_missing_transport():
     client._client.open_sftp.return_value = sftp
 
     assert client.open_sftp(timeout_seconds=42) is sftp
+
+
+def test_verify_properties_default_to_none():
+    """未配置阶段校验字段时返回 None，由调用方回退默认值。"""
+    client = build_client()
+    assert client.verify_targets is None
+    assert client.verify_ctest_filter is None
+    assert client.verify_direct_tests is None
+
+
+def test_verify_properties_read_config():
+    """配置中的阶段校验字段必须原样暴露给工具层。"""
+    cfg = dict(CONFIG, verify_targets=["app"], verify_ctest_filter="app", verify_direct_tests=["test_app"])
+    with patch("builtins.open", mock_open(read_data=json.dumps(cfg))):
+        client = SSHClient("/fake/config.json")
+
+    assert client.verify_targets == ["app"]
+    assert client.verify_ctest_filter == "app"
+    assert client.verify_direct_tests == ["test_app"]

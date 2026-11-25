@@ -50,3 +50,40 @@ def test_verify_stage6_runs_direct_binary_checks_before_ctest():
     commands = [call.args[0] for call in ssh.exec.call_args_list]
     assert any("test_camera_provider" in command for command in commands)
     assert any("test_main_window_camera_state" in command for command in commands)
+
+
+def test_verify_stage6_uses_configured_targets_and_filter():
+    """配置中给出目标列表与过滤式时，必须使用配置值而不是默认常量。"""
+    ssh = MagicMock()
+    ssh.exec.return_value = ("found\n", "", 0)
+    ssh.verify_targets = ["my_app"]
+    ssh.verify_direct_tests = ["test_my_app"]
+    ssh.verify_ctest_filter = "test_my_app"
+
+    with patch("tools.verify_tools.vm_build") as mock_build, patch("tools.verify_tools.vm_run_ctest") as mock_ctest:
+        mock_build.return_value = {"success": True, "error_lines": [], "warning_count": 0, "full_output": ""}
+        mock_ctest.return_value = {"total": 1, "passed": 1, "failed": 0, "failed_cases": [], "full_output": ""}
+        result = vm_verify_stage6(ssh)
+
+    assert mock_build.call_args[1]["targets"] == ["my_app"]
+    assert mock_ctest.call_args[1]["filter"] == "test_my_app"
+    commands = [call.args[0] for call in ssh.exec.call_args_list]
+    assert any("./test_my_app" in command for command in commands)
+    assert result["overall"] == "passed"
+
+
+def test_verify_stage6_falls_back_when_config_type_is_wrong():
+    """配置类型不对或为空时必须回退默认常量，不能把非列表真值当目标使用。"""
+    ssh = MagicMock()
+    ssh.exec.return_value = ("found\n", "", 0)
+    ssh.verify_targets = "not-a-list"
+    ssh.verify_ctest_filter = 123
+    ssh.verify_direct_tests = {"bad": "type"}
+
+    with patch("tools.verify_tools.vm_build") as mock_build, patch("tools.verify_tools.vm_run_ctest") as mock_ctest:
+        mock_build.return_value = {"success": True, "error_lines": [], "warning_count": 0, "full_output": ""}
+        mock_ctest.return_value = {"total": 3, "passed": 3, "failed": 0, "failed_cases": [], "full_output": ""}
+        vm_verify_stage6(ssh)
+
+    assert "vision_gui" in mock_build.call_args[1]["targets"]
+    assert "test_main_window_camera_state" in mock_ctest.call_args[1]["filter"]
