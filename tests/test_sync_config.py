@@ -17,11 +17,11 @@ def write_config(
 ):
     path = tmp_path / "config.json"
     payload = {
-        "ssh_host": "192.168.1.7",
+        "ssh_host": "192.0.2.10",
         "ssh_port": 22,
-        "ssh_user": "liu",
+        "ssh_user": "user",
         "ssh_key_path": "key",
-        "project_root": "/home/liu/project",
+        "project_root": "/home/user/project",
         "local_project_root": str(root),
         "sync_state_path": state_path,
     }
@@ -135,12 +135,12 @@ def test_state_symlink_escape_is_rejected(tmp_path: Path):
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("ssh_host", "192.168.1.8"),
+        ("ssh_host", "192.0.2.11"),
         ("ssh_port", 2222),
         ("ssh_user", "other"),
         ("ssh_key_path", "other-key"),
         ("verify_host_keys", False),
-        ("project_root", "/home/liu/other"),
+        ("project_root", "/home/user/other"),
         ("sync_excludes", ["secret.txt"]),
         ("sync_max_files_per_call", 101),
     ],

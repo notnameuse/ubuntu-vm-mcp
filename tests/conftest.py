@@ -51,11 +51,11 @@ def make_config(
     return SyncConfig(
         package_root=package_root,
         local_project_root=project_root.resolve(),
-        project_root="/home/liu/project",
+        project_root="/home/user/project",
         state_dir=state_dir,
-        ssh_host="192.168.1.7",
+        ssh_host="192.0.2.10",
         ssh_port=22,
-        ssh_user="liu",
+        ssh_user="user",
         ssh_key_path="key",
         verify_host_keys=True,
         sync_excludes=(),
@@ -78,7 +78,7 @@ class RemoteFile:
 class FakeSFTP:
     """供同步测试使用的内存 SFTP，记录所有变更类操作。"""
 
-    def __init__(self, files: dict[str, RemoteFile] | None = None, root: str = "/home/liu/project"):
+    def __init__(self, files: dict[str, RemoteFile] | None = None, root: str = "/home/user/project"):
         self.files = dict(files or {})
         self.symlinks: set[str] = set()
         self.specials: set[str] = set()
@@ -424,12 +424,12 @@ def make_sync_tools(
     config_path.write_text(
         json.dumps(
             {
-                "ssh_host": "192.168.1.7",
+                "ssh_host": "192.0.2.10",
                 "ssh_port": 22,
-                "ssh_user": "liu",
+                "ssh_user": "user",
                 "ssh_key_path": "key",
                 "verify_host_keys": True,
-                "project_root": "/home/liu/project",
+                "project_root": "/home/user/project",
                 "local_project_root": str(project),
                 "sync_excludes": [],
                 "sync_state_path": str(package_root / "sync_state"),

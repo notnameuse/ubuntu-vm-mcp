@@ -138,8 +138,8 @@ def test_new_regular_file_uses_default_mode():
 
 def test_confirm_digest_binds_root_and_window():
     local = [make_local_entry("main.cpp", b"x")]
-    first = build_sync_plan(local, RemoteIndex(root_realpath="/home/liu/project"), make_config())
-    second = build_sync_plan(local, RemoteIndex(root_realpath="/home/liu/other"), make_config())
+    first = build_sync_plan(local, RemoteIndex(root_realpath="/home/user/project"), make_config())
+    second = build_sync_plan(local, RemoteIndex(root_realpath="/home/user/other"), make_config())
 
     assert first.confirm_digest != second.confirm_digest
     assert first.confirm_digest == compute_confirm_digest(first.root_realpath, first.window)
@@ -291,7 +291,7 @@ def test_confirm_digest_rejects_remote_only_item():
     item = SyncPlanItem(relative_path="remote.cpp", kind="remote_only", local=None)
 
     with pytest.raises(ValueError, match="local files"):
-        compute_confirm_digest("/home/liu/project", [item])
+        compute_confirm_digest("/home/user/project", [item])
 
 
 def test_blocked_summary_is_informational_and_window_is_empty():

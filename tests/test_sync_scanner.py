@@ -153,18 +153,18 @@ def test_shell_script_without_crlf_is_not_marked_converted(tmp_path: Path):
 
 def test_fake_sftp_directory_permissions():
     remote = FakeSFTP()
-    remote.mkdir("/home/liu/project/new", mode=0o700)
-    assert remote.lstat("/home/liu/project/new").st_mode & 0o777 == 0o700
+    remote.mkdir("/home/user/project/new", mode=0o700)
+    assert remote.lstat("/home/user/project/new").st_mode & 0o777 == 0o700
 
-    remote.chmod("/home/liu/project/new", 0o755)
+    remote.chmod("/home/user/project/new", 0o755)
 
-    assert remote.lstat("/home/liu/project/new").st_mode & 0o777 == 0o755
+    assert remote.lstat("/home/user/project/new").st_mode & 0o777 == 0o755
 
 
 def test_fake_sftp_rejects_absolute_path_outside_root():
     remote = FakeSFTP()
     with pytest.raises(ValueError, match="escapes"):
-        remote.lstat("/home/liu/project-other/main.cpp")
+        remote.lstat("/home/user/project-other/main.cpp")
 
 
 def test_make_plan_digest_binds_root_and_window(tmp_path: Path):

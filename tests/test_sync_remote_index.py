@@ -18,7 +18,7 @@ def test_same_size_file_is_hashed_and_detects_change(tmp_path: Path):
     index = build_remote_index(FakeSSH(remote), make_config(tmp_path), [local], time.monotonic() + 10)
 
     assert index.files["src/main.cpp"].sha256 == sha256(b"int b;\n")
-    assert index.root_realpath == "/home/liu/project"
+    assert index.root_realpath == "/home/user/project"
     assert index.files["src/main.cpp"].hash_checked is True
     assert index.files["src/main.cpp"].size == len(b"int b;\n")
 
@@ -138,7 +138,7 @@ def test_unicode_space_newline_and_backslash_names(tmp_path: Path):
 
 def test_assert_safe_remote_path_rejects_unsafe_relative_paths(tmp_path: Path):
     remote = FakeSFTP()
-    root = remote.normalize("/home/liu/project")
+    root = remote.normalize("/home/user/project")
 
     for path in ("", "/etc/passwd", "../secret", "src/../../secret"):
         with pytest.raises(ValueError):
@@ -148,10 +148,10 @@ def test_assert_safe_remote_path_rejects_unsafe_relative_paths(tmp_path: Path):
 def test_assert_safe_remote_path_checks_parents_and_leaf_type(tmp_path: Path):
     remote = FakeSFTP({"src/main.cpp": RemoteFile(b"x"), "dir/child": RemoteFile(b"x")})
     remote.symlinks.add("linked")
-    root = remote.normalize("/home/liu/project")
+    root = remote.normalize("/home/user/project")
 
-    assert assert_safe_remote_path(remote, root, "src/main.cpp") == "/home/liu/project/src/main.cpp"
-    assert assert_safe_remote_path(remote, root, "new/file.cpp") == "/home/liu/project/new/file.cpp"
+    assert assert_safe_remote_path(remote, root, "src/main.cpp") == "/home/user/project/src/main.cpp"
+    assert assert_safe_remote_path(remote, root, "new/file.cpp") == "/home/user/project/new/file.cpp"
     with pytest.raises(ValueError, match="link"):
         assert_safe_remote_path(remote, root, "linked/file.cpp")
     with pytest.raises(ValueError, match="regular"):
@@ -208,14 +208,14 @@ def test_special_remote_file_is_type_conflict(tmp_path: Path):
 
 def test_assert_safe_remote_path_rejects_missing_leaf_when_required(tmp_path: Path):
     remote = FakeSFTP()
-    root = remote.normalize("/home/liu/project")
+    root = remote.normalize("/home/user/project")
 
     with pytest.raises(FileNotFoundError):
         assert_safe_remote_path(remote, root, "missing.cpp", allow_missing_leaf=False)
 
 
 def test_missing_remote_root_is_structured_error(tmp_path: Path):
-    config = replace(make_config(tmp_path), project_root="/home/liu/missing")
+    config = replace(make_config(tmp_path), project_root="/home/user/missing")
     index = build_remote_index(FakeSSH(FakeSFTP()), config, [], time.monotonic() + 10)
 
     assert index.errors
@@ -299,7 +299,7 @@ def test_open_sftp_failure_is_structured(tmp_path: Path):
 def test_assert_safe_remote_path_rejects_leaf_link_and_parent_file(tmp_path: Path):
     remote = FakeSFTP({"src": RemoteFile(b"file")})
     remote.symlinks.add("main.cpp")
-    root = remote.normalize("/home/liu/project")
+    root = remote.normalize("/home/user/project")
 
     with pytest.raises(ValueError, match="not a directory"):
         assert_safe_remote_path(remote, root, "src/main.cpp")

@@ -109,7 +109,7 @@ def test_preview_reports_roots_and_excludes(tmp_path: Path):
     preview = tools.preview(FakeSSH(FakeSFTP()))
 
     assert preview["local_project_root"].endswith("project")
-    assert preview["project_root"] == "/home/liu/project"
+    assert preview["project_root"] == "/home/user/project"
     assert ".git" in preview["effective_excludes"]
 
 
