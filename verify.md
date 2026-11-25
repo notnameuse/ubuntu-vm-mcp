@@ -11,13 +11,17 @@
    期望：输出 `Host key pinned: SHA256:<43位base64>` 与 `Private key: <路径>`，退出码 0。
 3. 在 VM 上执行 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`。
    期望：其 SHA256 base64 与第 2 步打印值一致（不一致说明遭遇中间人，按第 5 步删条目后重跑）。
+   若该文件不存在（主机关掉了 ed25519 主机密钥），改用 `ssh_host_rsa_key.pub` 并与脚本实际钉下的密钥类型对照。
 4. 再执行一次同一命令。
    期望：同样成功；远端 `grep -c ubuntu-vm-mcp ~/.ssh/authorized_keys` 结果为 1（不重复追加）；
    本地 `~/.ssh/known_hosts` 中该主机的行数仍为 1（不重复追加指纹行）。
+   前提：该条目由本脚本写入且为**明文**形式。若你的 ssh 配置启用了 `HashKnownHosts`（条目形如 `|1|...`），
+   脚本无法识别已有条目，行数会变成 2，且第 5 步的 mismatch 保护不会触发 —— 预期行为，已在 README 说明。
 5. 手工把 known_hosts 里该主机的 base64 改成 `AAAAold`，再跑一次脚本。
    期望：报 `host key mismatch for <entry>`，退出码 1，且 known_hosts **未被改写**；
    用 `ssh-keygen -R <entry>`（非 22 端口写成 `"[ip]:port"`）删掉后重跑即恢复正常。
-6. 在 known_hosts 同主机保留一行 `ecdsa-sha2-nistp256` 条目（模拟正常机器多密钥类型），重跑脚本。
+6. 在 known_hosts 同主机保留一行其他密钥类型的条目（必须是**真实公钥行**，用
+   `ssh-keyscan -t ecdsa <VM_IP>` 生成并追加；手搓的假 base64 会让 `load_host_keys` 抛 `InvalidHostKey`），重跑脚本。
    期望：不报 mismatch，正常追加 ed25519 条目。
 7. 本地执行 `ssh -i <私钥路径> <VM_USER>@<VM_IP> "echo ok"`。
    期望：输出 `ok`，不再索要密码。
@@ -26,7 +30,8 @@
 
 8. 复制 `config.example.json` 为 `config.json`，替换全部 `<...>` 占位符（Windows 路径写正斜杠）。
 9. 故意只留 `ssh_host` 为 `<VM_IP>` 不替换，调用 `vm_check_connection`。
-   期望：`connected: false`，错误信息里是 `gaierror` 类字样（说明占位符没换，不是网络故障）；改回后恢复。
+   期望：`connected: false`，`error` 文案是 `[Errno 11001] getaddrinfo failed`（Windows）或
+   `Name or service not known`（Linux）—— 异常类型是 `socket.gaierror`，但输出里**不会出现 gaierror 字样**；改回后恢复。
 10. 把 mcp 片段贴进所用 Agent 配置，改 `command` 与 `args` 两条绝对路径；VS Code 用 `servers` 键。
 11. **重载 MCP 或重启 Agent**（stdio 进程不重载就仍跑旧代码）。
     期望：Agent 工具列表出现 13 个工具，含 5 个 `vm_sync_*`。
@@ -54,25 +59,31 @@
 20. 调用 `vm_sync_status`。
     期望：该文件归入 `unchanged`。
 21. 用旧 `confirm_digest` 配新 `token`（或改文件后再 apply）。
-    期望：返回 `rejected_stale`，远端文件未被改动。
-22. 在 `config.json` 的 `sync_excludes` 里加入某个文件路径后重新 preview。
-    期望：该文件不再出现在 `add`/`overwrite`，而被计入排除统计。
+    期望：返回 `rejected_stale`，远端文件未被改动。注意多文件窗口里若前面的文件已落地，
+    返回的是 `partial` 而不是 `rejected_stale`，同时 `unprocessed`/`failed` 会列出未处理项。
+22. 在 `config.json` 的 `sync_excludes` 里加入某个只存在于本地的文件路径后重新 preview。
+    期望：该文件从 `add`/`overwrite`/`unchanged` 中**完全消失**（本地排除项不计入任何分类）；
+    若排除命中的是远端条目，则计入返回值的 `remote_excluded_count`（本地侧没有对应的排除计数字段）。
 
 ## 5. 编译与阶段校验
 
 23. 调用 `vm_cmake_configure`。
     期望：`success: true` 且 `summary` 为 `exit_code=0`（该工具返回键是 `success/summary/errors/full_output`，没有独立的 `exit_code` 键）。
 24. 调用 `vm_build`。期望：`success: true`，`error_lines` 为空。
+    若返回 `command timed out after 120 seconds` 且 `exit_code=124`，是 `command_timeout_seconds` 预算不够（远端仍在编译），调大后重试。
 25. 调用 `vm_run_ctest`。期望：`failed` 为 0。
 26. 在 `config.json` 里把 `verify_targets` 改成你项目的一个目标、`verify_direct_tests` 与
     `verify_ctest_filter` 同步改小，调用 `vm_verify_stage6`。
     期望：构建的是你配置的目标，而不是默认的 `vision_gui` 等。
 27. 把 `verify_targets` 改成 `[]`，调用 `vm_verify_stage6`。
-    期望：日志出现 `verify_targets 为空，已回退默认值`，实际仍构建默认目标（空值不等于跳过）。
+    期望：**工具返回值不变**，告警只出现在 MCP 服务进程的 stderr（`verify_targets 为空，已回退默认值`），
+    实际仍构建默认目标（空值不等于跳过）。看这条日志需要去看 Agent 的 MCP 服务输出，不在返回值里。
 
 ## 6. 开源卫生
 
-28. `git log --all --oneline -- config.json`。期望：无输出。
+28. `git log --all --oneline -- config.json`。
+    期望：**有输出**（历史上确实存在新增与删除两个提交），但 `git log --all -p -- config.json` 里出现的
+    必须只是占位值（`127.0.0.1`、`ubuntu`、`C:/Users/your-user/...`），不得出现真实 IP、真实用户名或真实密钥路径。
 29. `git ls-files config.json`。期望：无输出；`git ls-files config.example.json` 期望列出该文件。
 30. `git status --short`。期望：无输出（`config.json`、`docs/superpowers/`、`.superpowers/`、`Report.md` 均被忽略）。
 31. `python -m pytest -q`。期望：244 passed, 3 skipped。
