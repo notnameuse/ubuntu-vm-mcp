@@ -146,6 +146,8 @@ Windows PowerShell 用 `Copy-Item config.example.json config.json`。然后填�
 
 编译：`vm_cmake_configure` → `vm_build` → `vm_run_ctest`。需要一次性回归用 `vm_verify_stage6`。
 
+注意 `vm_build` 默认**不传 `-j`（串行）**，目的是兼容旧版 CMake；多核机器请显式传并行度，例如 `vm_build(jobs=8)`，否则大型工程编译会很慢。
+
 ### 同步行为要点
 
 - **单向**：只上传本地存在的文件，远端多出来的文件归为 `remote_only`，只列出、**不删除**
@@ -181,6 +183,9 @@ Windows PowerShell 用 `Copy-Item config.example.json config.json`。然后填�
 - `verify_host_keys` 默认 `true`，未知主机直接拒连，不做静默接受
 - 同步层的路径校验拒绝符号链接与 `..` 逃逸，只写项目根内的普通文件；密钥脚本则在 `~/.ssh` 下用 `shlex.quote` 包串幂等追加，不适用项目根校验
 - 错误消息会移除私钥路径；配置类型写错时的告警只打键名与类型名，不打配置值
+- `vm_exec` / `vm_run_project_command` **不做命令白名单或黑名单**：等价于以 `ssh_user` 身份在 VM 上执行任意 shell。需要隔离请自行使用受限账号、容器或快照，不要指望本工具拦截 `sudo`、`rm -rf` 这类命令
+- `vm_run_project_command` 的 `working_directory` 允许绝对路径，因此可以在项目根之外执行命令；只有**同步层**才有目录逃逸校验
+- `vm_run_ctest` 除 `total`/`passed`/`failed`/`failed_cases`/`full_output` 外还返回 `exit_code`，供阶段校验区分“ctest 没输出 summary”与“真的跑失败了”
 
 ## 开发
 
@@ -189,6 +194,8 @@ python -m pytest -q
 ```
 
 当前基线：244 passed, 3 skipped。
+
+仓库通过 `.gitattributes` 强制 `* text=auto eol=lf`：入库内容与工作区检出内容统一 LF。即使你的 `core.autocrlf=true`（Windows Git for Windows 的安装级默认），检出也不会变成 CRLF；请勿删除该文件，否则协作时会产生整文件的 CRLF 差异噪声。
 
 ## 许可证
 

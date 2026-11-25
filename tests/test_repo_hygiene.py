@@ -22,8 +22,8 @@ def _scanned_files():
 def test_no_personal_environment_values_in_sources():
     offenders = []
     for path in _scanned_files():
-        if not path.exists():
-            continue
+        # 守护文件被改名或移走时必须报警，否则守卫会静默变成空转
+        assert path.exists(), f"受守护的文件缺失：{path.relative_to(ROOT)}"
         text = path.read_text(encoding="utf-8")
         for needle in FORBIDDEN:
             if needle in text:

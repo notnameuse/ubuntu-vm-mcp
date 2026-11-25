@@ -87,4 +87,7 @@
 29. `git ls-files config.json`。期望：无输出；`git ls-files config.example.json` 期望列出该文件。
 30. `git status --short`。期望：无输出（`config.json`、`docs/superpowers/`、`.superpowers/`、`Report.md` 均被忽略）。
 31. `python -m pytest -q`。期望：244 passed, 3 skipped。
-32. `Get-Content .gitattributes`。期望：`* text=auto eol=lf`，且新克隆的 `.sh` 文件为 LF。
+32. `Get-Content .gitattributes`。期望：`* text=auto eol=lf`；再跑 `git ls-files --eol README.md`，
+    期望 `i/lf w/lf`（入库与工作区都是 LF，即使 `core.autocrlf=true` 也不会变成 CRLF）。
+33. 调用 `vm_build`（不传 `jobs`）与 `vm_build(jobs=8)` 各一次。
+    期望：前者命令串不含 `-- -j`（默认串行），后者含 `-- -j8`。

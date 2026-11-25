@@ -7,7 +7,7 @@ EXAMPLE = Path(__file__).resolve().parent.parent / "config.example.json"
 
 
 def test_example_is_valid_json_with_required_keys():
-    """模板必须是合法 JSON，且包含 load_sync_config 与构建链要求的全部键。"""
+    """模板必须是合法 JSON，且包含 load_sync_config 与构建链要求的必填键。"""
     raw = json.loads(EXAMPLE.read_text(encoding="utf-8"))
     for key in (
         "ssh_host",

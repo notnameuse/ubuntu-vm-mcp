@@ -50,6 +50,8 @@ class SSHClient:
                 return "", f"command timed out after {actual_timeout} seconds", 124
 
     def _exec_once(self, command, timeout, stdin_text=None):
+        # 必须固定关闭 PTY：PTY 通道上 shutdown_write() 不产生 EOF，
+        # cat 这类读到 EOF 的命令会一直挂到工具超时，而且终端回显会污染 stdout
         stdin, stdout, stderr = self._client.exec_command(
             command,
             timeout=timeout,
