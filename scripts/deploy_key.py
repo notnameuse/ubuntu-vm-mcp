@@ -12,6 +12,7 @@ import base64
 import getpass
 import hashlib
 import shlex
+import socket
 import sys
 from pathlib import Path
 
@@ -22,6 +23,32 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 KEY_COMMENT = "ubuntu-vm-mcp"
 LOGIN_PROBE = "echo ubuntu-vm-mcp-ok"
 LOGIN_PROBE_MARKER = "ubuntu-vm-mcp-ok"
+TCP_CONNECT_TIMEOUT_SECONDS = 15
+HANDSHAKE_TIMEOUT_SECONDS = 15
+
+
+def _fingerprint(server_key: paramiko.PKey) -> str:
+    """返回 OpenSSH 标准 SHA256 指纹（base64、无填充），可直接与 ssh-keygen -lf 对照。"""
+    digest = hashlib.sha256(base64.b64decode(server_key.get_base64())).digest()
+    return base64.b64encode(digest).decode().rstrip("=")
+
+
+def _pinned_base64(lines: list[str], entry: str) -> str | None:
+    """在 known_hosts 行中查找 entry 已钉的公钥 base64。
+
+    标记行（@cert-authority/@revoked）、注释行与字段不足的行一律跳过：
+    paramiko 的 HostKeys.load 会在标记行上抛 InvalidHostKey，而且它不是 SSHException 的子类，兜不住。
+    """
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("@"):
+            continue
+        fields = stripped.split()
+        if len(fields) < 3:
+            continue
+        if entry in fields[0].split(","):
+            return fields[2]
+    return None
 
 
 def generate_key(key_path: Path) -> str:
@@ -44,25 +71,41 @@ def generate_key(key_path: Path) -> str:
 
 
 def pin_host_key(host: str, port: int, known_hosts: Path) -> str:
-    """抓取远端主机公钥写入 known_hosts，返回 OpenSSH 标准 base64 SHA256 指纹（无填充）。"""
+    """抓取远端主机公钥并固定到 known_hosts，返回 OpenSSH 标准 SHA256 指纹。
+
+    只用 append 写单行，绝不整份重写：paramiko HostKeys.save 是 truncate+重写，
+    会丢掉它解析不了的行（如 sk-ssh-ed25519、@cert-authority），在 Windows 上还会把整份文件改成 CRLF。
+    """
     known_hosts = Path(known_hosts).expanduser()
-    transport = paramiko.Transport((host, port))
+    entry = host if port == 22 else f"[{host}]:{port}"
+
+    # Transport((host, port)) 内部直接阻塞 connect，不带任何超时，IP 写错会长时间假死
+    sock = socket.create_connection((host, port), timeout=TCP_CONNECT_TIMEOUT_SECONDS)
+    transport = paramiko.Transport(sock)
     try:
-        transport.connect()
+        transport.start_client(timeout=HANDSHAKE_TIMEOUT_SECONDS)
         server_key = transport.get_remote_server_key()
     finally:
         transport.close()
 
-    host_keys = paramiko.HostKeys()
+    lines: list[str] = []
     if known_hosts.exists():
-        host_keys.load(str(known_hosts))
-    entry = host if port == 22 else f"[{host}]:{port}"
-    host_keys.add(entry, server_key.get_name(), server_key)
-    known_hosts.parent.mkdir(parents=True, exist_ok=True)
-    host_keys.save(str(known_hosts))
+        lines = known_hosts.read_text(encoding="utf-8", errors="replace").splitlines()
 
-    digest = hashlib.sha256(base64.b64decode(server_key.get_base64())).digest()
-    return base64.b64encode(digest).decode().rstrip("=")
+    pinned = _pinned_base64(lines, entry)
+    if pinned is not None and pinned != server_key.get_base64():
+        raise RuntimeError(
+            f"host key mismatch for {entry}: pinned fingerprint differs from the server key. "
+            f"If the VM was rebuilt, remove the stale line from {known_hosts} and run again."
+        )
+
+    if pinned is None:
+        known_hosts.parent.mkdir(parents=True, exist_ok=True)
+        newline = "\n" if not lines or lines[-1].strip() else ""
+        with open(known_hosts, "a", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"{newline}{entry} {server_key.get_name()} {server_key.get_base64()}\n")
+
+    return _fingerprint(server_key)
 
 
 def _verified_client(known_hosts: Path) -> paramiko.SSHClient:

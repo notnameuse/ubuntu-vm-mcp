@@ -1,5 +1,6 @@
 """密钥脚本单测：生成/复用、指纹固定、幂等部署、免密验证、入口返回码。"""
 
+import shlex
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -39,13 +40,18 @@ def test_pin_host_key_writes_entry_and_closes_transport(tmp_path):
     transport.get_remote_server_key.return_value = server_key
     known_hosts = tmp_path / "known_hosts"
 
-    with patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+    with patch("scripts.deploy_key.socket.create_connection") as connector, \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport) as transport_cls:
         fingerprint = deploy_key.pin_host_key("192.0.2.10", 22, known_hosts)
 
     assert len(fingerprint) == 43
     assert "=" not in fingerprint
     assert "192.0.2.10" in known_hosts.read_text(encoding="utf-8")
     transport.close.assert_called_once()
+    # TCP 连接必须带超时，否则 IP 写错时长时间假死
+    assert connector.call_args[1]["timeout"] == deploy_key.TCP_CONNECT_TIMEOUT_SECONDS
+    assert transport_cls.call_args[0][0] is connector.return_value
+    transport.start_client.assert_called_once_with(timeout=deploy_key.HANDSHAKE_TIMEOUT_SECONDS)
 
 
 def test_pin_host_key_uses_bracket_entry_for_nondefault_port(tmp_path):
@@ -56,10 +62,80 @@ def test_pin_host_key_uses_bracket_entry_for_nondefault_port(tmp_path):
     transport.get_remote_server_key.return_value = server_key
     known_hosts = tmp_path / "known_hosts"
 
-    with patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+    with patch("scripts.deploy_key.socket.create_connection"), \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
         deploy_key.pin_host_key("192.0.2.10", 2222, known_hosts)
 
     assert "[192.0.2.10]:2222" in known_hosts.read_text(encoding="utf-8")
+
+
+def test_pin_host_key_preserves_lines_paramiko_cannot_parse(tmp_path):
+    """known_hosts 里的标记行与其他类型条目必须原样保留，不得被整份重写掉。"""
+    known_hosts = tmp_path / "known_hosts"
+    # 用 newline="\n" 写 fixture：Path.write_text 在 Windows 上会把 \n 转成 \r\n，会干扰后面的字节断言
+    with open(known_hosts, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            "@cert-authority *.example.com ssh-ed25519 AAAA\n"
+            "10.0.0.10 sk-ssh-ed25519@openssh.com AAAA\n"
+            "# a comment line\n"
+        )
+    deploy_key.generate_key(tmp_path / "vm_key")
+    server_key = paramiko.Ed25519Key.from_private_key_file(str(tmp_path / "vm_key"))
+    transport = MagicMock()
+    transport.get_remote_server_key.return_value = server_key
+
+    with patch("scripts.deploy_key.socket.create_connection"), \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+        deploy_key.pin_host_key("192.0.2.10", 22, known_hosts)
+
+    text = known_hosts.read_text(encoding="utf-8")
+    assert "@cert-authority *.example.com" in text
+    assert "sk-ssh-ed25519@openssh.com" in text
+    assert "# a comment line" in text
+    assert "192.0.2.10" in text
+    # 必须按字节断言：read_text 的通用换行会把 CRLF 读成 LF，掩盖回归
+    assert b"\r" not in known_hosts.read_bytes()
+
+
+def test_pin_host_key_is_idempotent(tmp_path):
+    """同一主机密钥重跑不得重复追加行。"""
+    known_hosts = tmp_path / "known_hosts"
+    deploy_key.generate_key(tmp_path / "vm_key")
+    server_key = paramiko.Ed25519Key.from_private_key_file(str(tmp_path / "vm_key"))
+    transport = MagicMock()
+    transport.get_remote_server_key.return_value = server_key
+
+    with patch("scripts.deploy_key.socket.create_connection"), \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+        deploy_key.pin_host_key("192.0.2.10", 22, known_hosts)
+        first = known_hosts.read_text(encoding="utf-8")
+        deploy_key.pin_host_key("192.0.2.10", 22, known_hosts)
+        second = known_hosts.read_text(encoding="utf-8")
+
+    assert first == second
+    assert second.count("192.0.2.10 ") == 1
+
+
+def test_pin_host_key_rejects_changed_host_key(tmp_path):
+    """已钉指纹与服务端不一致时必须拒绝并报错，不能静默改钉。"""
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("192.0.2.10 ssh-ed25519 AAAAold\n", encoding="utf-8")
+    deploy_key.generate_key(tmp_path / "vm_key")
+    server_key = paramiko.Ed25519Key.from_private_key_file(str(tmp_path / "vm_key"))
+    transport = MagicMock()
+    transport.get_remote_server_key.return_value = server_key
+    before = known_hosts.read_text(encoding="utf-8")
+
+    with patch("scripts.deploy_key.socket.create_connection"), \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+        try:
+            deploy_key.pin_host_key("192.0.2.10", 22, known_hosts)
+            raised = None
+        except RuntimeError as exc:
+            raised = exc
+
+    assert raised is not None and "host key mismatch" in str(raised)
+    assert known_hosts.read_text(encoding="utf-8") == before
 
 
 def _fake_ssh_client(exit_code=0, stderr=b""):
@@ -90,8 +166,11 @@ def test_deploy_public_key_command_is_idempotent(tmp_path):
     assert "mkdir -p ~/.ssh" in command
     assert "chmod 700 ~/.ssh" in command
     assert "chmod 600 ~/.ssh/authorized_keys" in command
+    assert shlex.quote("ssh-ed25519 AAAA comment") in command
     assert client.connect.call_args[1]["password"] == "secret"
     assert client.connect.call_args[1]["look_for_keys"] is False
+    assert client.connect.call_args[1]["allow_agent"] is False
+    client.load_host_keys.assert_called_once_with(str(known_hosts))
     client.set_missing_host_key_policy.assert_called_once()
     assert isinstance(client.set_missing_host_key_policy.call_args[0][0], paramiko.RejectPolicy)
     client.close.assert_called_once()
@@ -130,6 +209,22 @@ def test_verify_key_login_checks_echo_output(tmp_path):
 
     assert ok is True
     assert client.connect.call_args[1]["key_filename"] == str(tmp_path / "vm_key")
+
+
+def test_verify_key_login_returns_false_on_unexpected_output(tmp_path):
+    """登录标记不匹配时必须返回 False，否则 main 无从判断免密是否真的可用。"""
+    client = MagicMock()
+    stdout = MagicMock()
+    stdout.read.return_value = b"password:\n"
+    client.exec_command.return_value = (MagicMock(), stdout, MagicMock())
+
+    with patch("scripts.deploy_key.paramiko.SSHClient", return_value=client):
+        ok = deploy_key.verify_key_login(
+            "192.0.2.10", 22, "user", tmp_path / "vm_key", tmp_path / "known_hosts"
+        )
+
+    assert ok is False
+    client.close.assert_called_once()
 
 
 def test_main_returns_1_when_generation_fails():
