@@ -1,14 +1,21 @@
 import re
+import shlex
+from pathlib import PurePosixPath
+
+
+def _build_dir(ssh):
+    return PurePosixPath(getattr(ssh, "build_dir", "build") or "build").as_posix()
 
 
 def vm_run_ctest(ssh, filter=None, verbose=False, timeout=None):
-    cmd = f"cd {ssh.project_root} && ctest --test-dir build --output-on-failure"
+    build_dir = _build_dir(ssh)
+    cmd = f"cd {shlex.quote(ssh.project_root)} && cd {shlex.quote(build_dir)} && ctest --output-on-failure"
     if filter:
-        cmd += f" -R \"{filter}\""
+        cmd += f" -R {shlex.quote(filter)}"
     if verbose:
         cmd += " -V"
 
-    stdout, stderr, _ = ssh.exec(cmd, timeout)
+    stdout, stderr, code = ssh.exec(cmd, timeout)
     text = stdout + stderr
 
     all_pass = re.search(r"100% tests passed, 0 tests failed out of (\d+)", text)
@@ -21,8 +28,14 @@ def vm_run_ctest(ssh, filter=None, verbose=False, timeout=None):
         total = int(partial.group(3))
         failed = int(partial.group(2))
         passed = total - failed
+    elif code != 0:
+        total = 0
+        passed = 0
+        failed = 1
     else:
-        total = passed = failed = 0
+        total = 0
+        passed = 0
+        failed = 1
 
     failed_cases = []
     for m in re.finditer(r"Test #\d+: (\S+) .*\*\*\*Failed", text):
@@ -32,6 +45,7 @@ def vm_run_ctest(ssh, filter=None, verbose=False, timeout=None):
         "total": total,
         "passed": passed,
         "failed": failed,
+        "exit_code": code,
         "failed_cases": failed_cases,
         "full_output": text,
     }

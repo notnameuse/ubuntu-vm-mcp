@@ -11,6 +11,7 @@ class SSHClient:
         with open(cfg, "r", encoding="utf-8") as f:
             self._config = json.load(f)
         self._client = None
+        self._sftp = None
 
     def _connect(self):
         client = paramiko.SSHClient()
@@ -31,34 +32,103 @@ class SSHClient:
         )
         self._client = client
 
-    def exec(self, command, timeout=None):
+    def exec(self, command, timeout=None, stdin_text=None):
         if self._client is None:
             self._connect()
         actual_timeout = timeout if timeout is not None else int(self._config.get("command_timeout_seconds", 120))
         try:
-            _, stdout, stderr = self._client.exec_command(command, timeout=actual_timeout)
-            code = stdout.channel.recv_exit_status()
-            return stdout.read().decode(), stderr.read().decode(), code
+            return self._exec_once(command, actual_timeout, stdin_text=stdin_text)
+        except TimeoutError:
+            return "", f"command timed out after {actual_timeout} seconds", 124
         except (paramiko.SSHException, OSError, EOFError) as e:
             logging.warning("SSH exec failed, reconnecting: %s", e)
-            self._client = None
+            self.close()
             self._connect()
-            _, stdout, stderr = self._client.exec_command(command, timeout=actual_timeout)
-            code = stdout.channel.recv_exit_status()
-            return stdout.read().decode(), stderr.read().decode(), code
+            try:
+                return self._exec_once(command, actual_timeout, stdin_text=stdin_text)
+            except TimeoutError:
+                return "", f"command timed out after {actual_timeout} seconds", 124
+
+    def _exec_once(self, command, timeout, stdin_text=None):
+        stdin, stdout, stderr = self._client.exec_command(
+            command,
+            timeout=timeout,
+            get_pty=stdin_text is not None,
+        )
+        if stdin_text is not None:
+            payload = stdin_text if stdin_text.endswith("\n") else f"{stdin_text}\n"
+            stdin.write(payload)
+            stdin.flush()
+            if hasattr(stdin, "channel"):
+                stdin.channel.shutdown_write()
+            else:
+                stdin.close()
+        output = stdout.read().decode()
+        error_output = stderr.read().decode()
+        code = stdout.channel.recv_exit_status()
+        return output, error_output, code
+
+    def open_sftp(self, timeout_seconds: int = 300) -> paramiko.SFTPClient:
+        """返回可用 SFTP 会话，失效时关闭旧资源并重连一次。"""
+        if self._client is None:
+            self.close()
+            self._connect()
+        try:
+            if self._sftp is None or self._sftp.get_channel().closed:
+                if self._sftp is not None:
+                    self._sftp.close()
+                    self._sftp = None
+                return self._open_sftp_once(timeout_seconds)
+            self._sftp.get_channel().settimeout(timeout_seconds)
+            return self._sftp
+        except (paramiko.SSHException, OSError, EOFError) as exc:
+            logging.warning("SSH SFTP failed, reconnecting: %s", exc)
+            self.close()
+            self._connect()
+            try:
+                return self._open_sftp_once(timeout_seconds)
+            except (paramiko.SSHException, OSError, EOFError):
+                self.close()
+                raise
+
+    def _open_sftp_once(self, timeout_seconds: int) -> paramiko.SFTPClient:
+        """创建 SFTP 并设置通道超时和 SSH 保活。"""
+        sftp = self._client.open_sftp()
+        self._sftp = sftp
+        sftp.get_channel().settimeout(timeout_seconds)
+        transport = self._client.get_transport()
+        if transport is not None:
+            transport.set_keepalive(30)
+        return sftp
 
     @property
     def project_root(self):
         return self._config["project_root"]
 
     @property
+    def build_dir(self):
+        return self._config.get("build_dir", "build")
+
+    @property
     def log_max_bytes(self):
         return int(self._config.get("log_max_bytes", 20480))
 
     def close(self):
+        """尽力关闭并清空 SFTP/SSH 资源，清理异常只记录不阻断恢复流程。"""
+        if self._sftp is not None:
+            try:
+                self._sftp.close()
+            except Exception as exc:
+                logging.warning("SFTP close failed: %s", exc)
+            finally:
+                self._sftp = None
         if self._client is not None:
-            self._client.close()
-            self._client = None
+            try:
+                self._client.close()
+            except Exception as exc:
+                logging.warning("SSH close failed: %s", exc)
+            finally:
+                self._client = None
 
     def __enter__(self):
         return self

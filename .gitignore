@@ -1,0 +1,11 @@
+sync_state/
+__pycache__/
+.pytest_cache/
+*.pyc
+config.json*
+*.key
+*.pem
+.venv/
+docs/superpowers/
+Report.md
+.superpowers/
