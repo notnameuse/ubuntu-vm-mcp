@@ -1,4 +1,6 @@
+import logging
 from unittest.mock import MagicMock, patch
+
 from tools.verify_tools import vm_verify_stage6
 
 
@@ -98,3 +100,63 @@ def test_verify_stage6_falls_back_when_config_type_is_wrong():
         "run_test_main_window_camera_state",
         "regression_tests",
     ]
+
+
+def test_verify_config_invalid_type_warns_without_leaking_value(caplog):
+    """类型不对要告警，且告警里只出现键名与类型名，不能带出配置值原文。"""
+    ssh = MagicMock()
+    ssh.exec.return_value = ("found\n", "", 0)
+    ssh.verify_targets = ["secret_target"]
+    ssh.verify_direct_tests = None
+    ssh.verify_ctest_filter = 123
+
+    with caplog.at_level(logging.WARNING), \
+         patch("tools.verify_tools.vm_build") as mock_build, \
+         patch("tools.verify_tools.vm_run_ctest") as mock_ctest:
+        mock_build.return_value = {"success": True, "error_lines": [], "warning_count": 0, "full_output": ""}
+        mock_ctest.return_value = {"total": 1, "passed": 1, "failed": 0, "failed_cases": [], "full_output": ""}
+        vm_verify_stage6(ssh)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("verify_ctest_filter" in text and "类型不符合预期(int)" in text for text in messages)
+    assert not any("verify_targets" in text for text in messages)
+    assert not any("secret_target" in text for text in messages)
+
+
+def test_verify_config_empty_value_warns_as_empty(caplog):
+    """空列表/空串要报“为空”，不能误报为类型不对；同时仍回退默认目标。"""
+    ssh = MagicMock()
+    ssh.exec.return_value = ("found\n", "", 0)
+    ssh.verify_targets = []
+    ssh.verify_direct_tests = []
+    ssh.verify_ctest_filter = ""
+
+    with caplog.at_level(logging.WARNING), \
+         patch("tools.verify_tools.vm_build") as mock_build, \
+         patch("tools.verify_tools.vm_run_ctest") as mock_ctest:
+        mock_build.return_value = {"success": True, "error_lines": [], "warning_count": 0, "full_output": ""}
+        mock_ctest.return_value = {"total": 3, "passed": 3, "failed": 0, "failed_cases": [], "full_output": ""}
+        vm_verify_stage6(ssh)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 3
+    assert all("为空" in text for text in messages)
+    assert "vision_gui" in mock_build.call_args[1]["targets"]
+
+
+def test_verify_config_absent_value_does_not_warn(caplog):
+    """未配置（None）属正常状态，不得产生告警。"""
+    ssh = MagicMock()
+    ssh.exec.return_value = ("found\n", "", 0)
+    ssh.verify_targets = None
+    ssh.verify_direct_tests = None
+    ssh.verify_ctest_filter = None
+
+    with caplog.at_level(logging.WARNING), \
+         patch("tools.verify_tools.vm_build") as mock_build, \
+         patch("tools.verify_tools.vm_run_ctest") as mock_ctest:
+        mock_build.return_value = {"success": True, "error_lines": [], "warning_count": 0, "full_output": ""}
+        mock_ctest.return_value = {"total": 3, "passed": 3, "failed": 0, "failed_cases": [], "full_output": ""}
+        vm_verify_stage6(ssh)
+
+    assert caplog.records == []

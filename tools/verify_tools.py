@@ -20,13 +20,22 @@ STAGE6_DIRECT_TESTS = [
 ]
 
 
+def _invalid_reason(value):
+    """区分“配置为空”与“配置类型不对”，避免告警文案把排障方向带偏。"""
+    if isinstance(value, (list, tuple, str)) and not value:
+        return "为空"
+    if isinstance(value, dict) and not value:
+        return "为空"
+    return f"类型不符合预期({type(value).__name__})"
+
+
 def _configured_list(ssh, name, default):
     """读取列表型配置；类型不符或为空时回退默认值并告警，避免 MagicMock 等非列表真值被误用。返回副本。"""
     value = getattr(ssh, name, None)
     if isinstance(value, (list, tuple)) and value:
         return list(value)
     if value is not None:
-        logging.warning("%s 类型不符合预期(%s)，已回退默认值", name, type(value).__name__)
+        logging.warning("%s %s，已回退默认值", name, _invalid_reason(value))
     return list(default)
 
 
@@ -36,7 +45,7 @@ def _configured_text(ssh, name, default):
     if isinstance(value, str) and value:
         return value
     if value is not None:
-        logging.warning("%s 类型不符合预期(%s)，已回退默认值", name, type(value).__name__)
+        logging.warning("%s %s，已回退默认值", name, _invalid_reason(value))
     return default
 
 
