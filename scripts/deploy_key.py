@@ -33,11 +33,12 @@ def _fingerprint(server_key: paramiko.PKey) -> str:
     return base64.b64encode(digest).decode().rstrip("=")
 
 
-def _pinned_base64(lines: list[str], entry: str) -> str | None:
-    """在 known_hosts 行中查找 entry 已钉的公钥 base64。
+def _pinned_base64(lines: list[str], entry: str, key_type: str) -> str | None:
+    """在 known_hosts 行中查找 entry 已钉的同类型公钥 base64。
 
     标记行（@cert-authority/@revoked）、注释行与字段不足的行一律跳过：
     paramiko 的 HostKeys.load 会在标记行上抛 InvalidHostKey，而且它不是 SSHException 的子类，兜不住。
+    必须连密钥类型一起比：同一主机常常同时存在 ecdsa/rsa/ed25519 多行，只看主机名会误报改钉。
     """
     for line in lines:
         stripped = line.strip()
@@ -46,7 +47,7 @@ def _pinned_base64(lines: list[str], entry: str) -> str | None:
         fields = stripped.split()
         if len(fields) < 3:
             continue
-        if entry in fields[0].split(","):
+        if entry in fields[0].split(",") and fields[1] == key_type:
             return fields[2]
     return None
 
@@ -92,16 +93,18 @@ def pin_host_key(host: str, port: int, known_hosts: Path) -> str:
     if known_hosts.exists():
         lines = known_hosts.read_text(encoding="utf-8", errors="replace").splitlines()
 
-    pinned = _pinned_base64(lines, entry)
+    pinned = _pinned_base64(lines, entry, server_key.get_name())
     if pinned is not None and pinned != server_key.get_base64():
         raise RuntimeError(
-            f"host key mismatch for {entry}: pinned fingerprint differs from the server key. "
-            f"If the VM was rebuilt, remove the stale line from {known_hosts} and run again."
+            f"host key mismatch for {entry}: pinned {server_key.get_name()} key differs from the "
+            f"server key. If the VM was rebuilt, run 'ssh-keygen -R {entry}' "
+            f"or remove the stale line in {known_hosts}, then run again."
         )
 
     if pinned is None:
         known_hosts.parent.mkdir(parents=True, exist_ok=True)
-        newline = "\n" if not lines or lines[-1].strip() else ""
+        # 仅当已有内容且末行非空时才补换行，避免新建文件开头多出空行
+        newline = "\n" if lines and lines[-1].strip() else ""
         with open(known_hosts, "a", encoding="utf-8", newline="\n") as handle:
             handle.write(f"{newline}{entry} {server_key.get_name()} {server_key.get_base64()}\n")
 

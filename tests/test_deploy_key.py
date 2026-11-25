@@ -138,6 +138,43 @@ def test_pin_host_key_rejects_changed_host_key(tmp_path):
     assert known_hosts.read_text(encoding="utf-8") == before
 
 
+def test_pin_host_key_accepts_other_keytype_line(tmp_path):
+    """同一主机已有其他密钥类型（如 ecdsa）行时不得误报改钉，应追加本类型条目。"""
+    known_hosts = tmp_path / "known_hosts"
+    with open(known_hosts, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("192.0.2.10 ecdsa-sha2-nistp256 AAAAxyz\n")
+    deploy_key.generate_key(tmp_path / "vm_key")
+    server_key = paramiko.Ed25519Key.from_private_key_file(str(tmp_path / "vm_key"))
+    transport = MagicMock()
+    transport.get_remote_server_key.return_value = server_key
+
+    with patch("scripts.deploy_key.socket.create_connection"), \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+        deploy_key.pin_host_key("192.0.2.10", 22, known_hosts)
+
+    text = known_hosts.read_text(encoding="utf-8")
+    assert "192.0.2.10 ecdsa-sha2-nistp256 AAAAxyz" in text
+    assert f"192.0.2.10 {server_key.get_name()} {server_key.get_base64()}" in text
+
+
+def test_pin_host_key_on_missing_file_writes_no_leading_blank_line(tmp_path):
+    """首次创建 known_hosts 时开头不得有多余空行，且不标准端口要写成 [host]:port。"""
+    known_hosts = tmp_path / "ssh" / "known_hosts"
+    deploy_key.generate_key(tmp_path / "vm_key")
+    server_key = paramiko.Ed25519Key.from_private_key_file(str(tmp_path / "vm_key"))
+    transport = MagicMock()
+    transport.get_remote_server_key.return_value = server_key
+
+    with patch("scripts.deploy_key.socket.create_connection"), \
+         patch("scripts.deploy_key.paramiko.Transport", return_value=transport):
+        deploy_key.pin_host_key("192.0.2.10", 2222, known_hosts)
+
+    raw = known_hosts.read_bytes()
+    assert not raw.startswith(b"\n")
+    assert raw.count(b"\n") == 1
+    assert raw.startswith(b"[192.0.2.10]:2222 ssh-ed25519 ")
+
+
 def _fake_ssh_client(exit_code=0, stderr=b""):
     """构造一个只返回预设退出码与 stderr 的假 SSHClient。"""
     client = MagicMock()
