@@ -53,7 +53,7 @@ class SSHClient:
         stdin, stdout, stderr = self._client.exec_command(
             command,
             timeout=timeout,
-            get_pty=stdin_text is not None,
+            get_pty=False,
         )
         if stdin_text is not None:
             payload = stdin_text if stdin_text.endswith("\n") else f"{stdin_text}\n"

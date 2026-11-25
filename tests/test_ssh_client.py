@@ -108,7 +108,7 @@ def test_exec_drains_output_before_waiting_for_exit_status():
     assert order == ["stdout", "stderr", "exit"]
 
 
-def test_exec_writes_stdin_and_requests_pty():
+def test_exec_writes_stdin_without_pty():
     client = build_client()
     mock_stdin = MagicMock()
     mock_stdin.channel = MagicMock()
@@ -126,7 +126,7 @@ def test_exec_writes_stdin_and_requests_pty():
         client._client = inst
         client.exec("bash startup.sh", stdin_text="3")
 
-    inst.exec_command.assert_called_once_with("bash startup.sh", timeout=10, get_pty=True)
+    inst.exec_command.assert_called_once_with("bash startup.sh", timeout=10, get_pty=False)
     mock_stdin.write.assert_called_once_with("3\n")
     mock_stdin.flush.assert_called_once()
     mock_stdin.channel.shutdown_write.assert_called_once()
