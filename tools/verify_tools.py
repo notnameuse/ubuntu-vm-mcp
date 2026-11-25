@@ -1,3 +1,4 @@
+import logging
 import shlex
 from pathlib import PurePosixPath
 
@@ -20,18 +21,22 @@ STAGE6_DIRECT_TESTS = [
 
 
 def _configured_list(ssh, name, default):
-    """读取列表型配置；类型不符或为空时回退默认值，避免 MagicMock 等非列表真值被误用。"""
+    """读取列表型配置；类型不符或为空时回退默认值并告警，避免 MagicMock 等非列表真值被误用。返回副本。"""
     value = getattr(ssh, name, None)
     if isinstance(value, (list, tuple)) and value:
         return list(value)
+    if value is not None:
+        logging.warning("%s 类型不符合预期(%s)，已回退默认值", name, type(value).__name__)
     return list(default)
 
 
 def _configured_text(ssh, name, default):
-    """读取字符串型配置；类型不符或为空时回退默认值。"""
+    """读取字符串型配置；类型不符或为空时回退默认值并告警。"""
     value = getattr(ssh, name, None)
     if isinstance(value, str) and value:
         return value
+    if value is not None:
+        logging.warning("%s 类型不符合预期(%s)，已回退默认值", name, type(value).__name__)
     return default
 
 

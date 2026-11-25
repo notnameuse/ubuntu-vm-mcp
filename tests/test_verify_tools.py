@@ -83,7 +83,18 @@ def test_verify_stage6_falls_back_when_config_type_is_wrong():
     with patch("tools.verify_tools.vm_build") as mock_build, patch("tools.verify_tools.vm_run_ctest") as mock_ctest:
         mock_build.return_value = {"success": True, "error_lines": [], "warning_count": 0, "full_output": ""}
         mock_ctest.return_value = {"total": 3, "passed": 3, "failed": 0, "failed_cases": [], "full_output": ""}
-        vm_verify_stage6(ssh)
+        result = vm_verify_stage6(ssh)
 
     assert "vision_gui" in mock_build.call_args[1]["targets"]
     assert "test_main_window_camera_state" in mock_ctest.call_args[1]["filter"]
+
+    # dict 类型的非法值不得被强转成目标名去执行；步骤名仍应为默认常量的组合
+    commands = [call.args[0] for call in ssh.exec.call_args_list]
+    assert not any("./bad" in command for command in commands)
+    assert [step["name"] for step in result["steps"]] == [
+        "check_video_device",
+        "build_targets",
+        "run_test_camera_provider",
+        "run_test_main_window_camera_state",
+        "regression_tests",
+    ]
