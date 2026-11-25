@@ -1,0 +1,30 @@
+{
+  "ssh_host": "<VM_IP>",
+  "ssh_port": 22,
+  "ssh_user": "<VM_USER>",
+  "ssh_key_path": "<ABSOLUTE_PATH_TO_PRIVATE_KEY>",
+  "verify_host_keys": true,
+  "project_root": "/home/<VM_USER>/linux/<PROJECT_NAME>",
+  "local_project_root": "<ABSOLUTE_PATH_TO_LOCAL_PROJECT>",
+  "sync_excludes": [],
+  "sync_state_path": "sync_state",
+  "sync_token_ttl_seconds": 900,
+  "sync_scan_timeout_seconds": 600,
+  "sync_transfer_timeout_seconds": 300,
+  "sync_max_files_per_call": 100,
+  "build_dir": "build",
+  "command_timeout_seconds": 120,
+  "log_max_bytes": 20480,
+  "verify_targets": [
+    "vision_gui",
+    "test_camera_provider",
+    "test_main_window_camera_state",
+    "test_image_convert",
+    "test_inspection_worker"
+  ],
+  "verify_ctest_filter": "test_main_window_camera_state|test_image_convert|test_inspection_worker",
+  "verify_direct_tests": [
+    "test_camera_provider",
+    "test_main_window_camera_state"
+  ]
+}
