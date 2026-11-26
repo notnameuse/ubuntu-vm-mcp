@@ -87,7 +87,10 @@
 29. `git ls-files config.json`。期望：无输出；`git ls-files config.example.json` 期望列出该文件。
 30. `git status --short`。期望：无输出（`config.json`、`docs/superpowers/`、`.superpowers/`、`Report.md` 均被忽略）。
 31. `python -m pytest -q`。期望：244 passed, 3 skipped。
-32. `Get-Content .gitattributes`。期望：`* text=auto eol=lf`；再跑 `git ls-files --eol README.md`，
-    期望 `i/lf w/lf`（入库与工作区都是 LF，即使 `core.autocrlf=true` 也不会变成 CRLF）。
+32. `Get-Content .gitattributes`。期望：`* text=auto eol=lf`。
+    再克隆到临时目录验证（`git clone . /tmp/lf-check`），在克隆目录执行 `git ls-files --eol README.md`，
+    期望 `i/lf w/lf`；直接看字节应 `CR=0`。
+    注意：本仓库当前工作区若在 `.gitattributes` 生效前就已存在，`git ls-files --eol` 可能显示 `w/crlf`（stat 缓存
+    认为文件未变，不会自动重写），这不影响使用者；新克隆一律是 LF。
 33. 调用 `vm_build`（不传 `jobs`）与 `vm_build(jobs=8)` 各一次。
     期望：前者命令串不含 `-- -j`（默认串行），后者含 `-- -j8`。
