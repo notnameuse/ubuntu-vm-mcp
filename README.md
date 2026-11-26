@@ -109,7 +109,6 @@ Windows PowerShell 用 `Copy-Item config.example.json config.json`。然后填�
 
 把下面这段放进 Agent 的 MCP 配置，**两条绝对路径必须改成你自己的**：
 
-> 如果你把配置放在项目内（Qoder 的 `.qoder/mcp.json`、VS Code 的 `.vscode/mcp.json`），**记得把 `.qoder/`、`.vscode/` 加进你自己的 `.gitignore`**，否则你的本地绝对路径和密钥路径会被提交到公开仓库。
 
 ```json
 {
