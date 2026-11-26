@@ -17,6 +17,7 @@
 ### 1. 装依赖
 
 ```bash
+# 在本地终端执行即可，无需去ubuntu端
 git clone https://github.com/notnameuse/ubuntu-vm-mcp.git
 cd ubuntu-vm-mcp
 python -m pip install -r requirements.txt
@@ -30,6 +31,7 @@ python -m pip install -r requirements.txt
 
 ```bash
 # 在你的本地终端运行即可，记得填你的Ubuntu端IP/还有你的用户名
+# 注意：执行前一定要开启你的虚拟机，否则运行报错，其他故障排查见【故障排查】章节
 python scripts/deploy_key.py --host <VM_IP> --user <VM_USER>
 ```
 
