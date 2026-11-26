@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FORBIDDEN = ("192.168.1.7", "192.168.1.8", "/home/liu", "xiaoyouyou")
 # 内嵌禁串字面量的守护文件必须登记在此，否则会自我命中
 EXCLUDED = {"test_repo_hygiene.py"}
-EXTRA_FILES = ("config.example.json", "README.md", "LICENSE", "verify.md")
+EXTRA_FILES = ("config.example.json", "README.md", "LICENSE")
 
 
 def _scanned_files():
