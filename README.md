@@ -1,7 +1,16 @@
 # ubuntu-vm-mcp
 
+## 是什么
 把 Windows 本地的代码改动同步到 Ubuntu 虚拟机，并在虚拟机里完成 CMake 配置、编译与测试的 MCP 服务。
 可接入任何支持 stdio MCP 的 Agent。整体流程四步：装依赖 → 部署密钥 → 写配置 → 贴 mcp 片段。
+
+## 解决什么问题
+如果用AI Agent辅助开发Linux项目时，由于开发环境基本在虚拟机的Ubuntu系统里，基本上我都是在本地的windows系统上用AI改好代码，然后再上传到Ubuntu端
+进行测试，但这样太麻烦了，上传需要花时间；并且上传之后还不知道能不能编译过，编译不过又要回来告诉本地上的AI Agent，就这样一直来回做ubuntu端和本地端AI的传声筒
+，太麻烦了；之前也想过在ubuntu系统里装个AI Agent/IDE不就好了嘛？但是有的开发环境用的是Ubuntu老版本，对这些AI Agent/IDE的兼容性并不好，非常不方便。因此，又想兼容性好
+，又不想来回做传声筒，我就想开发一个MCP，用于连接AI和ubuntu，当AI开发完代码之后，自动同步改动代码到ubuntu端旧仓库，并自动完成编译/测试，如果编译/测试不通过，那么AI自己
+就可以发现并修改，不需要自己幸苦去做传话筒了。
+
 
 ## 快速开始
 
@@ -20,6 +29,7 @@ python -m pip install -r requirements.txt
 在**本地**终端执行（会提示输入一次 VM 密码）：
 
 ```bash
+# 在你的本地终端运行即可，记得填你的Ubuntu端IP/还有你的用户名
 python scripts/deploy_key.py --host <VM_IP> --user <VM_USER>
 ```
 
@@ -28,7 +38,7 @@ NAT 端口转发时加 `--port 2222`。报 `host key mismatch`、known_hosts 解
 
 ### 3. 写配置
 
-把仓库里的 `config.example.json` **复制或重命名为 `config.json`**（Windows 资源管理器直接改名即可，不要用命令行 `cp`，各系统写法不一样），然后用文本编辑器打开，把表里这些字段填掉：
+把仓库里的 `config.example.json` **复制或重命名为 `config.json`**，然后用文本编辑器打开，把表里这些字段填掉：
 
 | 字段 | 说明 |
 |---|---|
@@ -69,7 +79,7 @@ NAT 端口转发时加 `--port 2222`。报 `host key mismatch`、known_hosts 解
 | Cline | `%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` | `mcpServers` |
 | VS Code | 项目下 `.vscode/mcp.json` | **`servers`**（不是 `mcpServers`） |
 
-放项目内的话，记得把 `.qoder/`、`.vscode/` 加进你自己的 `.gitignore`，否则本地绝对路径会进公开仓库。
+
 改完**必须重载 MCP 或重启 Agent**：stdio 服务的工具清单在进程启动时固定，不重载就还跑旧代码。
 
 ## 使用
